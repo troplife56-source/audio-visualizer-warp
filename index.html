@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Visualiseur Audio - Bibliothèque Voyage & Vitesse</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body, html {
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: #020205;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            cursor: default;
+        }
+        body.hide-cursor {
+            cursor: none;
+        }
+        canvas {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+        #ui-panel {
+            position: absolute;
+            bottom: 25px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 15, 30, 0.85);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            padding: 12px 22px;
+            border-radius: 35px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            color: #fff;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.6);
+            z-index: 10;
+            transition: opacity 0.4s ease, transform 0.4s ease;
+        }
+        #ui-panel.hidden {
+            opacity: 0;
+            pointer-events: none;
+            transform: translateX(-50%) translateY(20px);
+        }
+        select, button, label.upload-btn {
+            background: linear-gradient(135deg, #6366f1, #a855f7);
+            border: none;
+            color: white;
+            padding: 8px 14px;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 600;
+            transition: transform 0.2s, box-shadow 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            outline: none;
+        }
+        select {
+            background: rgba(30, 30, 50, 0.9);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            cursor: pointer;
+        }
+        select option {
+            background: #10101e;
+            color: white;
+        }
+        button:hover, label.upload-btn:hover, select:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.5);
+        }
+        input[type="file"] {
+            display: none;
+        }
+        .separator {
+            width: 1px;
+            height: 24px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+        #track-name {
+            max-width: 110px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            font-size: 12px;
+            color: #cbd5e1;
+        }
+    </style>
+</head>
+<body>
+
+    <canvas id="canvas"></canvas>
+
+    <div id="ui-panel">
+        <select id="mode-select">
+            <option value="warp1" selected>🚀 1. Hyperespace Stellaire (Classique)</option>
+            <option value="warp2">⚡ 2. Tunnel Cybernétique Néon</option>
+            <option value="warp3">🌠 3. Pluie de Météores à l'Impulsion</option>
+            <option value="warp4">🌀 4. Hyper-Vortex Quantique</option>
+            <option value="warp5">✨ 5. Vitesse de la Lumière (Flash Pur)</option>
+            <option value="warp6">🕳️ 6. Traversée de Trou Noir (Gravitationnel)</option>
+            <option value="warp7">🏎️ 7. Pilote de F1 (Piste à Grande Vitesse)</option>
+            <option value="warp8">🌌 8. Traversée d'un Trou de Ver</option>
+            <option value="warp9">⚡ 9. Canon à Énergie Plasma</option>
+            <option value="warp10">🏙️ 10. Autoroute Cybernétique (Façade)</option>
+        </select>
+
+        <div class="separator"></div>
+
+        <label class="upload-btn">
+            📂 MP3
+            <input type="file" id="audiofile" accept="audio/*">
+        </label>
+        <button id="play-btn" disabled>▶ Lecture</button>
+        <button id="fullscreen-btn" title="Plein écran">⛶ Plein écran</button>
+        <span id="track-name">Aucune musique</span>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            initAllModes();
+        });
+
+        const mouse = { x: width / 2, y: height / 2 };
+        let uiPanel = document.getElementById('ui-panel');
+        let hideTimeout;
+
+        function resetInactivityTimer() {
+            uiPanel.classList.remove('hidden');
+            document.body.classList.remove('hide-cursor');
+            clearTimeout(hideTimeout);
+            hideTimeout = setTimeout(() => {
+                if (isPlaying) {
+                    uiPanel.classList.add('hidden');
+                    document.body.classList.add('hide-cursor');
+                }
+            }, 3500);
+        }
+
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+            resetInactivityTimer();
+        });
+
+        const fullscreenBtn = document.getElementById('fullscreen-btn');
+        fullscreenBtn.addEventListener('click', () => {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => {
+                    alert(`Erreur plein écran: ${err.message}`);
+                });
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+        });
+
+        let currentMode = 'warp1';
+        const modeSelect = document.getElementById('mode-select');
+        modeSelect.addEventListener('change', (e) => {
+            currentMode = e.target.value;
+            initAllModes();
+        });
+
+        // Audio setup
+        let audioCtx, audioSource, analyser, audioElement;
+        let isPlaying = false, dataArray;
+        const audioInput = document.getElementById('audiofile');
+        const playBtn = document.getElementById('play-btn');
+        const trackNameSpan = document.getElementById('track-name');
+
+        audioInput.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (!file) return;
+            trackNameSpan.textContent = file.name;
+            const audioURL = URL.createObjectURL(file);
+            if (audioElement) audioElement.pause();
+            audioElement = new Audio(audioURL);
+            audioElement.loop = true;
+
+            if (!audioCtx) {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                analyser = audioCtx.createAnalyser();
+                analyser.fftSize = 256;
+                audioSource = audioCtx.createMediaElementSource(audioElement);
+                audioSource.connect(analyser);
+                analyser.connect(audioCtx.destination);
+                dataArray = new Uint8Array(analyser.frequencyBinCount);
+            }
+            audioElement.play();
+            isPlaying = true;
+            playBtn.textContent = "⏸ Pause";
+            playBtn.disabled = false;
+            resetInactivityTimer();
+        });
+
+        playBtn.addEventListener('click', () => {
+            if (!audioElement) return;
+            if (isPlaying) { audioElement.pause(); playBtn.textContent = "▶ Lecture"; isPlaying = false; }
+            else { audioElement.play(); playBtn.textContent = "⏸ Pause"; isPlaying = true; resetInactivityTimer(); }
+        });
+
+        let particles = [];
+
+        function initAllModes() {
+            particles = [];
+            const count = 300;
+            for (let i = 0; i < count; i++) {
+                particles.push({
+                    x: (Math.random() - 0.5) * width * 2,
+                    y: (Math.random() - 0.5) * height * 2,
+                    z: Math.random() * width,
+                    size: Math.random() * 2 + 1,
+                    speed: Math.random() * 3 + 1,
+                    color: getModeColor()
+                });
+            }
+        }
+
+        function getModeColor() {
+            if (currentMode === 'warp1') return ['#ffffff', '#38bdf8', '#c084fc', '#fbbf24'][Math.floor(Math.random() * 4)];
+            if (currentMode === 'warp2') return ['#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899'][Math.floor(Math.random() * 4)];
+            if (currentMode === 'warp3') return ['#f87171', '#fbbf24', '#34d399', '#60a5fa'][Math.floor(Math.random() * 4)];
+            if (currentMode === 'warp4') return ['#a855f7', '#ec4899', '#06b6d4', '#ffffff'][Math.floor(Math.random() * 4)];
+            if (currentMode === 'warp5') return ['#ffffff', '#e0f2fe', '#bae6fd'][Math.floor(Math.random() * 3)];
+            if (currentMode === 'warp6') return ['#fbbf24', '#f97316', '#ef4444', '#ffffff'][Math.floor(Math.random() * 4)]; // Trou noir / accrétion
+            if (currentMode === 'warp7') return ['#ef4444', '#facc15', '#ffffff'][Math.floor(Math.random() * 3)];
+            if (currentMode === 'warp8') return ['#3b82f6', '#8b5cf6', '#ec4899'][Math.floor(Math.random() * 3)];
+            if (currentMode === 'warp9') return ['#06b6d4', '#38bdf8', '#ffffff'][Math.floor(Math.random() * 3)];
+            if (currentMode === 'warp10') return ['#ef4444', '#3b82f6', '#ffffff'][Math.floor(Math.random() * 3)];
+            return '#ffffff';
+        }
+
+        initAllModes();
+        let globalTime = 0;
+
+        function animate() {
+            ctx.fillStyle = 'rgba(2, 2, 5, 0.3)';
+            ctx.fillRect(0, 0, width, height);
+
+            let bass = 1;
+            if (isPlaying && analyser) {
+                analyser.getByteFrequencyData(dataArray);
+                let bassSum = 0;
+                for (let i = 0; i < 10; i++) bassSum += dataArray[i];
+                let bassAvg = bassSum / 10;
+                bass = 1 + (bassAvg / 128) * 3;
+            }
+
+            globalTime += 0.02;
+            const cx = width / 2 + (mouse.x - width / 2) * 0.15;
+            const cy = height / 2 + (mouse.y - height / 2) * 0.15;
+            const baseSpeed = (6 + (bass - 1) * 16);
+
+            ctx.save();
+            particles.forEach(p => {
+                p.z -= baseSpeed;
+                if (p.z <= 0) {
+                    p.z = width;
+                    p.x = (Math.random() - 0.5) * width * 2;
+                    p.y = (Math.random() - 0.5) * height * 2;
+                    p.color = getModeColor();
+                }
+
+                const k = 250 / p.z;
+                let px = p.x * k + cx;
+                let py = p.y * k + cy;
+
+                if (currentMode === 'warp4' || currentMode === 'warp8' || currentMode === 'warp6') {
+                    // Effet Trou noir (vortex gravitationnel courbé)
+                    let angle = p.z * 0.008 + globalTime * (currentMode === 'warp6' ? 2 : 1);
+                    let dist = Math.sqrt(p.x*p.x + p.y*p.y) * k * (currentMode === 'warp6' ? 0.8 : 1);
+                    px = cx + Math.cos(angle) * dist;
+                    py = cy + Math.sin(angle) * dist;
+                }
+
+                if (px >= 0 && px <= width && py >= 0 && py <= height) {
+                    const prevK = 250 / (p.z + baseSpeed * 1.5);
+                    ctx.strokeStyle = p.color;
+                    ctx.lineWidth = Math.max(1, (p.size * k) * (currentMode === 'warp5' ? 3 : 1.5));
+                    ctx.beginPath();
+                    ctx.moveTo(px, py);
+                    ctx.lineTo(p.x * prevK + cx, p.y * prevK + cy);
+                    ctx.stroke();
+                }
+            });
+            ctx.restore();
+
+            requestAnimationFrame(animate);
+        }
+
+        animate();
+    </script>
+</body>
+</html>
